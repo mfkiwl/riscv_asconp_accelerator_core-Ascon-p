@@ -34,6 +34,7 @@ import apu_core_package::*;
 `include "riscv_config.sv"
 
 import riscv_defines::*;
+import riscv_ascon_defines::*;
 
 module riscv_core
 #(
@@ -57,7 +58,11 @@ module riscv_core
   parameter APU_WOP_CPU         =  6,
   parameter APU_NDSFLAGS_CPU    = 15,
   parameter APU_NUSFLAGS_CPU    =  5,
-  parameter DM_HaltAddress      = 32'h1A110800
+  parameter DM_HaltAddress      = 32'h1A110800,
+  parameter ASCON_INSTR                     = 0,
+  parameter ASCON_UNROLLED_ROUNDS           = 1,
+  parameter ASCON_SWAP_ENDIANESS            = 1,
+  parameter ASCON_INTERMEDIATE_MULTIPLEXER  = 1
 )
 (
   // Clock and Reset
@@ -361,6 +366,14 @@ module riscv_core
   logic        irq_pending;
   logic [5:0]  irq_id;
 
+  // ASCON Signals
+  ascon_meta_t                      ascon_meta_info;
+  ascon_state_t                     rdata_ascon;
+  ascon_state_t                     wdata_ascon;
+  logic                             ascon_update_done;
+  logic                             ascon_instruction_ex;
+
+
   //Simchecker signal
   logic is_interrupt;
   assign is_interrupt = (pc_mux_id == PC_EXCEPTION) && (exc_pc_mux_id == EXC_PC_IRQ);
@@ -572,7 +585,8 @@ module riscv_core
     .APU_NARGS_CPU                ( APU_NARGS_CPU        ),
     .APU_WOP_CPU                  ( APU_WOP_CPU          ),
     .APU_NDSFLAGS_CPU             ( APU_NDSFLAGS_CPU     ),
-    .APU_NUSFLAGS_CPU             ( APU_NUSFLAGS_CPU     )
+    .APU_NUSFLAGS_CPU             ( APU_NUSFLAGS_CPU     ),
+    .ASCON_INSTR                  ( ASCON_INSTR          )
   )
   id_stage_i
   (
@@ -763,7 +777,13 @@ module riscv_core
     .perf_jump_o                  ( perf_jump            ),
     .perf_jr_stall_o              ( perf_jr_stall        ),
     .perf_ld_stall_o              ( perf_ld_stall        ),
-    .perf_pipeline_stall_o        ( perf_pipeline_stall  )
+    .perf_pipeline_stall_o        ( perf_pipeline_stall  ),
+
+    .ascon_meta_info_o            ( ascon_meta_info      ),
+    .rdata_ascon_o                ( rdata_ascon          ),
+    .wdata_ascon_i                ( wdata_ascon          ),
+    .ascon_update_done_i          ( ascon_update_done    ),
+    .ascon_instruction_ex_o       ( ascon_instruction_ex )
   );
 
 
@@ -785,7 +805,11 @@ module riscv_core
    .APU_NARGS_CPU    ( APU_NARGS_CPU      ),
    .APU_WOP_CPU      ( APU_WOP_CPU        ),
    .APU_NDSFLAGS_CPU ( APU_NDSFLAGS_CPU   ),
-   .APU_NUSFLAGS_CPU ( APU_NUSFLAGS_CPU   )
+   .APU_NUSFLAGS_CPU ( APU_NUSFLAGS_CPU   ),
+   .ASCON_INSTR                    ( ASCON_INSTR                    ),
+   .ASCON_UNROLLED_ROUNDS          ( ASCON_UNROLLED_ROUNDS          ),
+   .ASCON_SWAP_ENDIANESS           ( ASCON_SWAP_ENDIANESS           ),
+   .ASCON_INTERMEDIATE_MULTIPLEXER ( ASCON_INTERMEDIATE_MULTIPLEXER )
   )
   ex_stage_i
   (
@@ -899,7 +923,13 @@ module riscv_core
 
     .ex_ready_o                 ( ex_ready                     ),
     .ex_valid_o                 ( ex_valid                     ),
-    .wb_ready_i                 ( lsu_ready_wb                 )
+    .wb_ready_i                 ( lsu_ready_wb                 ),
+
+    .ascon_meta_info_i          ( ascon_meta_info              ),
+    .rdata_ascon_i              ( rdata_ascon                  ),
+    .wdata_ascon_o              ( wdata_ascon                  ),
+    .ascon_instruction_ex_i     ( ascon_instruction_ex         ),
+    .ascon_update_done_o        ( ascon_update_done            )
   );
 
 

@@ -32,12 +32,16 @@
 // ADDRESS 0 is NOT WRITABLE !!!!!!!!!!!!!!!!!!!!
 //
 
+import riscv_defines::*;
+import riscv_ascon_defines::*;
+
 module register_file_test_wrap
 #(
    parameter ADDR_WIDTH    = 5,
    parameter DATA_WIDTH    = 32,
    parameter FPU           = 0,
-   parameter Zfinx         = 0
+   parameter Zfinx         = 0,
+   parameter ASCON_INSTR   = 0
 )
 (
    // Clock and Reset
@@ -75,7 +79,13 @@ module register_file_test_wrap
    input  logic                    WEN_T,
    input  logic [ADDR_WIDTH-1:0]   A_T,
    input  logic [DATA_WIDTH-1:0]   D_T,
-   output logic [DATA_WIDTH-1:0]   Q_T
+   output logic [DATA_WIDTH-1:0]   Q_T,
+
+   // ASCON read port
+   output ascon_state_t            rdata_ascon_o,
+   // ASCON write port
+   input ascon_state_t             wdata_ascon_i,
+   input logic                     we_ascon_update_i
 );
 
 
@@ -134,35 +144,39 @@ module register_file_test_wrap
       .ADDR_WIDTH ( ADDR_WIDTH          ),
       .DATA_WIDTH ( DATA_WIDTH          ),
       .FPU        ( FPU                 ),
-      .Zfinx      ( Zfinx               )
+      .Zfinx      ( Zfinx               ),
+      .ASCON_INSTR( ASCON_INSTR         )
+
    )
    riscv_register_file_i
    (
-      .clk        ( clk                 ),
-      .rst_n      ( rst_n               ),
+      .clk               ( clk                 ),
+      .rst_n             ( rst_n               ),
 
-      .test_en_i  ( test_en_i           ),
+      .test_en_i         ( test_en_i           ),
 
-      .raddr_a_i  ( ReadAddr_a_muxed    ),
-      .rdata_a_o  ( rdata_a_o           ),
+      .raddr_a_i         ( ReadAddr_a_muxed    ),
+      .rdata_a_o         ( rdata_a_o           ),
 
-      .raddr_b_i  ( raddr_b_i           ),
-      .rdata_b_o  ( rdata_b_o           ),
+      .raddr_b_i         ( raddr_b_i           ),
+      .rdata_b_o         ( rdata_b_o           ),
 
-      .raddr_c_i  ( raddr_c_i           ),
-      .rdata_c_o  ( rdata_c_o           ),
+      .raddr_c_i         ( raddr_c_i           ),
+      .rdata_c_o         ( rdata_c_o           ),
 
-      .waddr_a_i  ( WriteAddr_a_muxed   ),
-      .wdata_a_i  ( WriteData_a_muxed   ),
-      .we_a_i     ( WriteEnable_a_muxed ),
+      .waddr_a_i         ( WriteAddr_a_muxed   ),
+      .wdata_a_i         ( WriteData_a_muxed   ),
+      .we_a_i            ( WriteEnable_a_muxed ),
 
-      .waddr_b_i  ( WriteAddr_b_muxed   ),
-      .wdata_b_i  ( WriteData_b_muxed   ),
-      .we_b_i     ( WriteEnable_b_muxed )
+      .waddr_b_i         ( WriteAddr_b_muxed   ),
+      .wdata_b_i         ( WriteData_b_muxed   ),
+      .we_b_i            ( WriteEnable_b_muxed ),
+
+      // ASCON read port
+      .rdata_ascon_o     ( rdata_ascon_o       ),
+      // ASCON write port
+      .wdata_ascon_i     ( wdata_ascon_i       ),
+      .we_ascon_update_i ( we_ascon_update_i   )
    );
-
-
-
-
 
 endmodule

@@ -36,6 +36,7 @@
 
 import apu_core_package::*;
 import riscv_defines::*;
+import riscv_ascon_defines::*;
 
 module riscv_ex_stage
 #(
@@ -47,7 +48,13 @@ module riscv_ex_stage
   parameter APU_NARGS_CPU    =  3,
   parameter APU_WOP_CPU      =  6,
   parameter APU_NDSFLAGS_CPU = 15,
-  parameter APU_NUSFLAGS_CPU =  5
+  parameter APU_NUSFLAGS_CPU =  5,
+  parameter ASCON_INSTR                     = 0,
+  parameter ASCON_UNROLLED_ROUNDS           = 1,
+  parameter ASCON_SWAP_ENDIANESS            = 1,
+  parameter ASCON_INTERMEDIATE_MULTIPLEXER  = 1
+
+
 )
 (
   input  logic        clk,
@@ -162,7 +169,14 @@ module riscv_ex_stage
 
   output logic        ex_ready_o, // EX stage ready for new data
   output logic        ex_valid_o, // EX stage gets new data
-  input  logic        wb_ready_i  // WB stage ready for new data
+  input  logic        wb_ready_i,  // WB stage ready for new data
+
+  // ASCON
+  input ascon_meta_t    ascon_meta_info_i,
+  input ascon_state_t   rdata_ascon_i,
+  output ascon_state_t  wdata_ascon_o,
+  input  logic          ascon_instruction_ex_i,
+  output logic          ascon_update_done_o
 );
 
   logic [31:0]    alu_result;
@@ -289,6 +303,35 @@ module riscv_ex_stage
     .ex_ready_i          ( ex_ready_o      )
   );
 
+
+
+  ///////////////////////////////////////////////////
+  //     _    ____   ___   ___   __   _            //
+  //    / \  / ___| /  _/ / _  \|  \  ||           //
+  //   / _ \ \___ \|  |  | / \ || |\\ ||           //
+  //  / ___ \ ___) |  \_ \ \_/ /| | \\||           //
+  // /_/   \_|____/ \___| \___/ |_|  \_|           //
+  //                                               //
+  ///////////////////////////////////////////////////
+
+generate
+  if (ASCON_INSTR == 1) begin : ascon
+    riscv_ascon
+    #(
+      .UNROLLED_ROUNDS           ( ASCON_UNROLLED_ROUNDS          ),
+      .SWAP_ENDIANESS            ( ASCON_SWAP_ENDIANESS           ),
+      .INTERMEDIATE_MULTIPLEXER  ( ASCON_INTERMEDIATE_MULTIPLEXER )
+      )
+     ascon_i
+    (
+      .ascon_meta_info_i      ( ascon_meta_info_i      ),
+      .ascon_state_i          ( rdata_ascon_i          ),
+      .ascon_state_o          ( wdata_ascon_o          ),
+      .ascon_instruction_en_i ( ascon_instruction_ex_i ),
+      .ascon_update_done_o    ( ascon_update_done_o    )
+    );
+  end
+endgenerate
 
   ////////////////////////////////////////////////////////////////
   //  __  __ _   _ _   _____ ___ ____  _     ___ _____ ____     //

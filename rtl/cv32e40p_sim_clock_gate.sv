@@ -22,7 +22,7 @@ module cv32e40p_clock_gate
 `else
   logic clk_en;
 
-`ifndef SYNTHESIS
+// `ifndef SYNTHESIS
   always_latch
   begin
      if (clk_i == 1'b0)
@@ -30,11 +30,11 @@ module cv32e40p_clock_gate
   end
 
   assign clk_o = clk_i & clk_en;
-`else
-  generate
-      $fatal("[ERROR] cv32e40p_sim_clock_gate file must not be synthesized");
-  endgenerate
-`endif
+// `else
+//   generate
+//       $fatal("[ERROR] cv32e40p_sim_clock_gate file must not be synthesized");
+//   endgenerate
+// `endif
 
 `endif
 

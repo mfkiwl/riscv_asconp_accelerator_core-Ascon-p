@@ -18,3 +18,8 @@ TAGS
 /build
 /Bender.lock
 /Bender.local
+tb/*/*/*/*.o
+tb/*/*/*.o
+*.jou
+*.log
+*.str

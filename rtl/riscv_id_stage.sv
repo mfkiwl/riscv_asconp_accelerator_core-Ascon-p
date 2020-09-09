@@ -28,6 +28,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 import riscv_defines::*;
+import riscv_ascon_defines::*;
 import apu_core_package::*;
 
 
@@ -56,7 +57,8 @@ module riscv_id_stage
   parameter APU_NARGS_CPU     =  3,
   parameter APU_WOP_CPU       =  6,
   parameter APU_NDSFLAGS_CPU  = 15,
-  parameter APU_NUSFLAGS_CPU  =  5
+  parameter APU_NUSFLAGS_CPU  =  5,
+  parameter ASCON_INSTR       =  0
 )
 (
     input  logic        clk,
@@ -247,7 +249,14 @@ module riscv_id_stage
     output logic        perf_jump_o,          // we are executing a jump instruction
     output logic        perf_jr_stall_o,      // jump-register-hazard
     output logic        perf_ld_stall_o,      // load-use-hazard
-    output logic        perf_pipeline_stall_o //extra cycles from elw
+    output logic        perf_pipeline_stall_o, //extra cycles from elw
+
+    // ASCON
+    output ascon_meta_t    ascon_meta_info_o,
+    output ascon_state_t   rdata_ascon_o,
+    input  ascon_state_t   wdata_ascon_i,
+    input  logic           ascon_update_done_i,
+    output logic           ascon_instruction_ex_o
 );
 
   logic [31:0] instr;
@@ -973,7 +982,8 @@ module riscv_id_stage
   #(
     .ADDR_WIDTH(6),
     .FPU(FPU),
-    .Zfinx(Zfinx)
+    .Zfinx(Zfinx),
+    .ASCON_INSTR(ASCON_INSTR)
   )
   registers_i
   (
@@ -1012,7 +1022,11 @@ module riscv_id_stage
      .WEN_T       (                     ), // PLEASE CONNECT ME; Synthesis will remove me if unconnected
      .A_T         (                     ), // PLEASE CONNECT ME; Synthesis will remove me if unconnected
      .D_T         (                     ), // PLEASE CONNECT ME; Synthesis will remove me if unconnected
-     .Q_T         (                     )
+     .Q_T         (                     ),
+
+     .rdata_ascon_o          (  rdata_ascon_o          ),
+     .wdata_ascon_i          (  wdata_ascon_i          ),
+     .we_ascon_update_i      (  ascon_update_done_i    )
   );
 
 
@@ -1031,6 +1045,7 @@ module riscv_id_stage
     #(
       .A_EXTENSION         ( A_EXTENSION          ),
       .FPU                 ( FPU                  ),
+      .ASCON_INSTR         ( ASCON_INSTR          ),
       .FP_DIVSQRT          ( FP_DIVSQRT           ),
       .PULP_SECURE         ( PULP_SECURE          ),
       .SHARED_FP           ( SHARED_FP            ),
@@ -1152,7 +1167,9 @@ module riscv_id_stage
     // jump/branches
     .jump_in_dec_o                   ( jump_in_dec               ),
     .jump_in_id_o                    ( jump_in_id                ),
-    .jump_target_mux_sel_o           ( jump_target_mux_sel       )
+    .jump_target_mux_sel_o           ( jump_target_mux_sel       ),
+    .ascon_meta_info_o               ( ascon_meta_info_o         ),
+    .ascon_instruction_ex_o          ( ascon_instruction_ex_o    )
 
   );
 

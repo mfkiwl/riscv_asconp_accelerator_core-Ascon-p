@@ -27,12 +27,15 @@
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 
+import riscv_defines::*;
+
 module riscv_register_file
 #(
     parameter ADDR_WIDTH    = 5,
     parameter DATA_WIDTH    = 32,
     parameter FPU           = 0,
-    parameter Zfinx         = 0
+    parameter Zfinx         = 0,
+    parameter ASCON_INSTR   = 0
 )
 (
     // Clock and Reset
@@ -61,7 +64,14 @@ module riscv_register_file
     // Write port W2
     input logic [ADDR_WIDTH-1:0]   waddr_b_i,
     input logic [DATA_WIDTH-1:0]   wdata_b_i,
-    input logic                    we_b_i
+    input logic                    we_b_i,
+
+    // ASCON read port
+    output ascon_state_t           rdata_ascon_o,
+    // ASCON write port
+    input ascon_state_t            wdata_ascon_i,
+    input logic                    we_ascon_update_i
+
 );
 
   // number of integer registers
@@ -69,6 +79,21 @@ module riscv_register_file
   // number of floating point registers
   localparam    NUM_FP_WORDS  = 2**(ADDR_WIDTH-1);
   localparam    NUM_TOT_WORDS = FPU ? ( Zfinx ? NUM_WORDS : NUM_WORDS + NUM_FP_WORDS ) : NUM_WORDS;
+
+  // ASCON
+  localparam logic [ 0 : NUM_WORDS-1 ] ASCON_REGISTER_BITMAP    = 32'({
+  //x0    ra    sp    gp    tp    t0    t1    t2
+  	1'b0,    1'b0,    1'b0,    1'b0,    1'b0,    1'b0,    1'b0,    1'b0,
+  //s0    s1    a0    a1    a2    a3    a4    a5
+  	1'b0,    1'b0,    1'b0,    1'b0,    1'b1,    1'b1,    1'b1,    1'b1,
+  //a6    a7    s2    s3    s4    s5    s6    s7
+  	1'b1,    1'b1,    1'b0,    1'b0,    1'b0,    1'b0,    1'b0,    1'b0,
+  //s8    s9    s10   s11   t3    t4    t5    t6
+  	1'b0,    1'b0,    1'b0,    1'b0,    1'b1,    1'b1,    1'b1,    1'b1
+  });
+  
+  logic [NUM_WORDS-1:0] [DATA_WIDTH-1:0] ascon_port_reg_array;
+
 
   // integer register file
   logic [NUM_WORDS-1:0][DATA_WIDTH-1:0]     mem;
@@ -97,6 +122,29 @@ module riscv_register_file
      assign rdata_b_o = mem[raddr_b_i[4:0]];
      assign rdata_c_o = mem[raddr_c_i[4:0]];
   end
+
+  // ASCON
+  assign rdata_ascon_o.x0.reg_view.x_hi  = mem[12];
+  assign rdata_ascon_o.x0.reg_view.x_low = mem[13];
+  assign rdata_ascon_o.x1.reg_view.x_hi  = mem[14];
+  assign rdata_ascon_o.x1.reg_view.x_low = mem[15];
+  assign rdata_ascon_o.x2.reg_view.x_hi  = mem[16];
+  assign rdata_ascon_o.x2.reg_view.x_low = mem[17];
+  assign rdata_ascon_o.x3.reg_view.x_hi  = mem[28];
+  assign rdata_ascon_o.x3.reg_view.x_low = mem[29];
+  assign rdata_ascon_o.x4.reg_view.x_hi  = mem[30];
+  assign rdata_ascon_o.x4.reg_view.x_low = mem[31];
+
+  assign ascon_port_reg_array[12] = wdata_ascon_i.x0.reg_view.x_hi;
+  assign ascon_port_reg_array[13] = wdata_ascon_i.x0.reg_view.x_low;
+  assign ascon_port_reg_array[14] = wdata_ascon_i.x1.reg_view.x_hi;
+  assign ascon_port_reg_array[15] = wdata_ascon_i.x1.reg_view.x_low;
+  assign ascon_port_reg_array[16] = wdata_ascon_i.x2.reg_view.x_hi;
+  assign ascon_port_reg_array[17] = wdata_ascon_i.x2.reg_view.x_low;
+  assign ascon_port_reg_array[28] = wdata_ascon_i.x3.reg_view.x_hi;
+  assign ascon_port_reg_array[29] = wdata_ascon_i.x3.reg_view.x_low;
+  assign ascon_port_reg_array[30] = wdata_ascon_i.x4.reg_view.x_hi;
+  assign ascon_port_reg_array[31] = wdata_ascon_i.x4.reg_view.x_low;
 
   //-----------------------------------------------------------------------------
   //-- WRITE : Write Address Decoder (WAD), combinatorial process
@@ -143,23 +191,55 @@ module riscv_register_file
       end
     end
 
-    // loop from 1 to NUM_WORDS-1 as R0 is nil
-    for (i = 1; i < NUM_WORDS; i++)
-    begin : rf_gen
-
-      always_ff @(posedge clk, negedge rst_n)
-      begin : register_write_behavioral
-        if (rst_n==1'b0) begin
-          mem[i] <= 32'b0;
-        end else begin
-          if(we_b_dec[i] == 1'b1)
-            mem[i] <= wdata_b_i;
-          else if(we_a_dec[i] == 1'b1)
-            mem[i] <= wdata_a_i;
+    if (ASCON_INSTR == 1) begin
+      // for special ASCON instruction
+      // loop from 1 to NUM_WORDS-1 as R0 is nil
+      for (i = 1; i < NUM_WORDS; i++)
+      begin : rf_gen
+        always_ff @(posedge clk, negedge rst_n)
+        begin : register_write_behavioral
+          if (rst_n==1'b0) begin
+            mem[i] <= 32'b0;
+          end else begin
+            if (ASCON_REGISTER_BITMAP[i] == 1) begin
+              // generate register with ASCON feature
+              if (we_ascon_update_i == 1'b1) begin
+                // $write("Writing 0x%x to ASCON register %d with previous content 0x%x\n", ascon_port_reg_array[i], i, mem[i]);
+                mem[i] <= ascon_port_reg_array[i];
+              end else if(we_b_dec[i] == 1'b1) begin
+                mem[i] <= wdata_b_i;
+              end else if(we_a_dec[i] == 1'b1) begin
+                mem[i] <= wdata_a_i;
+              end
+            end else begin
+              // Generate normal register
+              if(we_b_dec[i] == 1'b1) begin
+                mem[i] <= wdata_b_i;
+              end else if(we_a_dec[i] == 1'b1) begin
+                mem[i] <= wdata_a_i;
+              end
+            end
+          end
         end
       end
-
+    end else begin
+      // loop from 1 to NUM_WORDS-1 as R0 is nil
+      for (i = 1; i < NUM_WORDS; i++)
+      begin : rf_gen
+        always_ff @(posedge clk, negedge rst_n)
+        begin : register_write_behavioral
+          if (rst_n==1'b0) begin
+            mem[i] <= 32'b0;
+          end else begin
+            if(we_b_dec[i] == 1'b1)
+              mem[i] <= wdata_b_i;
+            else if(we_a_dec[i] == 1'b1)
+              mem[i] <= wdata_a_i;
+          end
+        end
+      end
     end
+
 
     if (FPU == 1 && Zfinx == 0) begin
       // Floating point registers

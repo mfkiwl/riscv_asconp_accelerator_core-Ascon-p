@@ -28,6 +28,7 @@
 `include "apu_macros.sv"
 
 import riscv_defines::*;
+import riscv_ascon_defines::*;
 
 module riscv_decoder
 #(
@@ -41,7 +42,8 @@ module riscv_decoder
   parameter SHARED_INT_DIV    = 0,
   parameter SHARED_FP_DIVSQRT = 0,
   parameter WAPUTYPE          = 0,
-  parameter APU_WOP_CPU       = 6
+  parameter APU_WOP_CPU       = 6,
+  parameter ASCON_INSTR       = 0
 )
 (
   // singals running to/from controller
@@ -156,7 +158,11 @@ module riscv_decoder
   // jump/branches
   output logic [1:0]  jump_in_dec_o,           // jump_in_id without deassert
   output logic [1:0]  jump_in_id_o,            // jump is being calculated in ALU
-  output logic [1:0]  jump_target_mux_sel_o    // jump target selection
+  output logic [1:0]  jump_target_mux_sel_o,   // jump target selection
+
+  // ASCON
+  output logic           ascon_instruction_ex_o,
+  output ascon_meta_t    ascon_meta_info_o
 );
 
   // careful when modifying the following parameters! these types have to match the ones in the APU!
@@ -308,6 +314,10 @@ module riscv_decoder
     uret_dec_o                  = 1'b0;
     dret_dec_o                  = 1'b0;
 
+    ascon_instruction_ex_o          = 1'b0;
+    ascon_meta_info_o.rounds        = '0;
+    ascon_meta_info_o.roundconstant = '0;
+
     unique case (instr_rdata_i[6:0])
 
       //////////////////////////////////////
@@ -432,64 +442,74 @@ module riscv_decoder
       end
 
       OPCODE_LOAD,
-      OPCODE_LOAD_POST: begin
-        data_req        = 1'b1;
-        regfile_mem_we  = 1'b1;
-        rega_used_o     = 1'b1;
-        data_type_o     = 2'b00;
-        instr_multicycle_o = 1'b1;
-        // offset from immediate
-        alu_operator_o      = ALU_ADD;
-        alu_op_b_mux_sel_o  = OP_B_IMM;
-        imm_b_mux_sel_o     = IMMB_I;
+      OPCODE_LOAD_POST,
+      OPCODE_ASCON: begin
 
-        // post-increment setup
-        if (instr_rdata_i[6:0] == OPCODE_LOAD_POST) begin
-          prepost_useincr_o       = 1'b0;
-          regfile_alu_waddr_sel_o = 1'b0;
-          regfile_alu_we          = 1'b1;
-        end
+        if (ASCON_INSTR == 1'b1 && instr_rdata_i[6:0] == OPCODE_ASCON && instr_rdata_i[14:12] == 3'b011) begin
+          $write("ASCON instruction called. Rounds: %d(+1); Roundconstant: %h\n", instr_rdata_i[30:28], instr_rdata_i[27:20]);
+          ascon_instruction_ex_o                   = 1'b1;
+          ascon_meta_info_o.rounds                 = instr_rdata_i[30:28];
+          ascon_meta_info_o.roundconstant          = instr_rdata_i[27:20];
 
-        // sign/zero extension
-        data_sign_extension_o = {1'b0,~instr_rdata_i[14]};
+        end else begin
+          data_req        = 1'b1;
+          regfile_mem_we  = 1'b1;
+          rega_used_o     = 1'b1;
+          data_type_o     = 2'b00;
+          instr_multicycle_o = 1'b1;
+          // offset from immediate
+          alu_operator_o      = ALU_ADD;
+          alu_op_b_mux_sel_o  = OP_B_IMM;
+          imm_b_mux_sel_o     = IMMB_I;
 
-        // load size
-        unique case (instr_rdata_i[13:12])
-          2'b00:   data_type_o = 2'b10; // LB
-          2'b01:   data_type_o = 2'b01; // LH
-          2'b10:   data_type_o = 2'b00; // LW
-          default: data_type_o = 2'b00; // illegal or reg-reg
-        endcase
-
-        // reg-reg load (different encoding)
-        if (instr_rdata_i[14:12] == 3'b111) begin
-          // offset from RS2
-          regb_used_o        = 1'b1;
-          alu_op_b_mux_sel_o = OP_B_REGB_OR_FWD;
+          // post-increment setup
+          if (instr_rdata_i[6:0] == OPCODE_LOAD_POST) begin
+            prepost_useincr_o       = 1'b0;
+            regfile_alu_waddr_sel_o = 1'b0;
+            regfile_alu_we          = 1'b1;
+          end
 
           // sign/zero extension
-          data_sign_extension_o = {1'b0, ~instr_rdata_i[30]};
+          data_sign_extension_o = {1'b0,~instr_rdata_i[14]};
 
           // load size
-          unique case (instr_rdata_i[31:25])
-            7'b0000_000,
-            7'b0100_000: data_type_o = 2'b10; // LB, LBU
-            7'b0001_000,
-            7'b0101_000: data_type_o = 2'b01; // LH, LHU
-            7'b0010_000: data_type_o = 2'b00; // LW
-            default: begin
-              illegal_insn_o = 1'b1;
-            end
+          unique case (instr_rdata_i[13:12])
+            2'b00:   data_type_o = 2'b10; // LB
+            2'b01:   data_type_o = 2'b01; // LH
+            2'b10:   data_type_o = 2'b00; // LW
+            default: data_type_o = 2'b00; // illegal or reg-reg
           endcase
-        end
 
-        // special p.elw (event load)
-        if (instr_rdata_i[14:12] == 3'b110)
-          data_load_event_o = 1'b1;
+          // reg-reg load (different encoding)
+          if (instr_rdata_i[14:12] == 3'b111) begin
+            // offset from RS2
+            regb_used_o        = 1'b1;
+            alu_op_b_mux_sel_o = OP_B_REGB_OR_FWD;
 
-        if (instr_rdata_i[14:12] == 3'b011) begin
-          // LD -> RV64 only
-          illegal_insn_o = 1'b1;
+            // sign/zero extension
+            data_sign_extension_o = {1'b0, ~instr_rdata_i[30]};
+
+            // load size
+            unique case (instr_rdata_i[31:25])
+              7'b0000_000,
+              7'b0100_000: data_type_o = 2'b10; // LB, LBU
+              7'b0001_000,
+              7'b0101_000: data_type_o = 2'b01; // LH, LHU
+              7'b0010_000: data_type_o = 2'b00; // LW
+              default: begin
+                illegal_insn_o = 1'b1;
+              end
+            endcase
+          end
+
+          // special p.elw (event load)
+          if (instr_rdata_i[14:12] == 3'b110)
+            data_load_event_o = 1'b1;
+
+          if (instr_rdata_i[14:12] == 3'b011) begin
+            // LD -> RV64 only
+            illegal_insn_o = 1'b1;
+          end
         end
       end
 

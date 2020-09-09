@@ -59,11 +59,14 @@ parameter OPCODE_AMO       = 7'h2F;
 // parameter OPCODE_CUST1     = 7'h2b
 
 // PULP custom
-parameter OPCODE_LOAD_POST  = 7'h0b;
-parameter OPCODE_STORE_POST = 7'h2b;
-parameter OPCODE_PULP_OP    = 7'h5b;
-parameter OPCODE_VECOP      = 7'h57;
-parameter OPCODE_HWLOOP     = 7'h7b;
+parameter OPCODE_LOAD_POST  = 7'h0b; // 00 010 11 custom-0
+parameter OPCODE_STORE_POST = 7'h2b; // 01 010 11 custom-1
+parameter OPCODE_PULP_OP    = 7'h5b; // 10 110 11 custom-2
+parameter OPCODE_VECOP      = 7'h57; // 10 101 11 reserved
+parameter OPCODE_HWLOOP     = 7'h7b; // 11 110 11 custom-3
+
+// ASCON Custom
+parameter OPCODE_ASCON      = 7'h0b; // 00 010 11 reserved
 
 parameter REGC_S1   = 2'b10;
 parameter REGC_S4   = 2'b00;
